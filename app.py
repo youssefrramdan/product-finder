@@ -1,50 +1,71 @@
-import streamlit as st
+from flask import Flask, request, jsonify
 import pandas as pd
 import spacy
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Load spacy model (you'll need to download it first using: python -m spacy download en_core_web_sm)
-@st.cache_resource
-def load_model():
-    return spacy.load('en_core_web_sm')
+app = Flask(__name__)
 
-nlp = load_model()
+# Load spacy model
+nlp = spacy.load('en_core_web_sm')
 
 # Load product dataset
-@st.cache_data
-def load_data():
-    df = pd.read_csv("DataSetProducts.csv")
-    df["combined_text"] = df["name"].fillna('') + " " + df["description"].fillna('') + " " + df["categoryName"].fillna('')
-    return df
-
-df = load_data()
+df = pd.read_csv("DataSetProducts.csv")
+df["combined_text"] = df["name"].fillna('') + " " + df["description"].fillna('') + " " + df["categoryName"].fillna('')
 
 # Create embeddings using spacy
-@st.cache_data
-def create_embeddings(texts):
-    return np.array([nlp(text).vector for text in texts])
+product_embeddings = np.array([nlp(text).vector for text in df["combined_text"].tolist()])
 
-product_embeddings = create_embeddings(df["combined_text"].tolist())
-
-# Recommendation function based on user input
 def recommend_for_custom_input(user_input, top_n=5):
     input_embedding = nlp(user_input).vector.reshape(1, -1)
     similarities = cosine_similarity(input_embedding, product_embeddings)[0]
     top_indices = similarities.argsort()[::-1][:top_n]
     return df.iloc[top_indices][["name", "price", "categoryName", "imageUrls"]]
 
-# Streamlit UI
-st.title("🔍 Smart Product Finder")
-user_input = st.text_input("Describe the product you're looking for:")
+@app.route('/', methods=['GET'])
+def health_check():
+    return jsonify({
+        "status": "healthy",
+        "message": "Service is running"
+    })
 
-if user_input:
-    st.subheader("🛍 Recommended Products:")
-    results = recommend_for_custom_input(user_input)
+@app.route('/search', methods=['POST'])
+def search_products():
+    try:
+        data = request.get_json()
 
-    for _, row in results.iterrows():
-        st.markdown(f"### {row['name']}")
-        st.image(row["imageUrls"].strip("[]").split(",")[0].replace("'", "").strip(), width=200)
-        st.write(f"💵 Price: {row['price']} EGP")
-        st.write(f"📂 Category: {row['categoryName']}")
-        st.markdown("---")
+        if not data or 'query' not in data:
+            return jsonify({
+                "error": "Missing 'query' in request body"
+            }), 400
+
+        query = data['query']
+        top_n = data.get('top_n', 5)  # Optional parameter, defaults to 5
+
+        results = recommend_for_custom_input(query, top_n)
+
+        # Convert results to list of dictionaries
+        products = []
+        for _, row in results.iterrows():
+            # Clean up the imageUrls string and convert to list
+            image_urls = row["imageUrls"].strip("[]").split(",")
+            image_urls = [url.strip().strip("'") for url in image_urls]
+
+            products.append({
+                "name": row["name"],
+                "price": row["price"],
+                "category": row["categoryName"],
+                "imageUrls": image_urls
+            })
+
+        return jsonify({
+            "results": products
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
