@@ -39,9 +39,9 @@ def search_products():
     try:
         data = request.get_json()
 
-        if not data or 'query' not in data:
+        if not data or 'word' not in data:
             return jsonify({
-                "error": "Missing 'query' in request body"
+                "error": "Missing 'word' in request body"
             }), 400
 
         query = data['word']
