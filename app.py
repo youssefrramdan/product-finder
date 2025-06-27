@@ -44,8 +44,8 @@ def search_products():
                 "error": "Missing 'query' in request body"
             }), 400
 
-        query = data['query']
-        top_n = data.get('top_n', 5)  # Optional parameter, defaults to 5
+        query = data['word']
+        top_n = data.get('top', 5)  # Optional parameter, defaults to 5
 
         results = recommend_for_custom_input(query, top_n)
 
